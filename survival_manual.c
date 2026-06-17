@@ -24,6 +24,7 @@
 
 #define ASSETS_DIR "/ext/apps_assets/survival_manual/"
 #define MAX_SECTIONS 160
+#define COUNT_OF(x) (sizeof(x) / sizeof((x)[0]))
 
 typedef enum {
     ViewPages,
@@ -85,7 +86,7 @@ static void open_section(App* app, int sidx) {
         app->path, "%s%s.txt", ASSETS_DIR, survival_pages[app->current_page].file);
 
     File* f = storage_file_alloc(app->storage);
-    if(storage_file_open(f, furi_string_get_cstr(app->path), FSAM_READ, FSOM_OPEN_EXISTING)) {
+    if(storage_file_open(f, furi_string_get_cstr(app->path), FSAM_READ, FSOM_OPENING)) {
         storage_file_seek(f, s->offset, true);
         uint16_t rd = storage_file_read(f, app->text_buf, (uint16_t)s->length);
         app->text_buf[rd] = '\0';
@@ -117,25 +118,24 @@ static void open_page(App* app, int pidx) {
     furi_string_printf(app->path, "%s%s.idx", ASSETS_DIR, survival_pages[pidx].file);
 
     File* f = storage_file_alloc(app->storage);
-    if(storage_file_open(f, furi_string_get_cstr(app->path), FSAM_READ, FSOM_OPEN_EXISTING)) {
+    if(storage_file_open(f, furi_string_get_cstr(app->path), FSAM_READ, FSOM_OPENING)) {
         uint64_t sz = storage_file_size(f);
         char* buf = malloc((size_t)sz + 1);
         uint16_t got = storage_file_read(f, buf, (uint16_t)sz);
         buf[got] = '\0';
 
-        char* p = buf;
-        while(p && *p && app->section_count < MAX_SECTIONS) {
-            char* nl = strchr(p, '\n');
-            if(nl) *nl = '\0';
+        char* save = NULL;
+        char* line = strtok_r(buf, "\n", &save);
+        while(line && app->section_count < MAX_SECTIONS) {
             // line format: offset<TAB>length<TAB>title
-            char* t1 = strchr(p, '\t');
+            char* t1 = strchr(line, '\t');
             if(t1) {
                 *t1 = '\0';
                 char* t2 = strchr(t1 + 1, '\t');
                 if(t2) {
                     *t2 = '\0';
                     SectionEntry* e = &app->sections[app->section_count];
-                    e->offset = (uint32_t)strtoul(p, NULL, 10);
+                    e->offset = (uint32_t)strtoul(line, NULL, 10);
                     e->length = (uint32_t)strtoul(t1 + 1, NULL, 10);
                     strncpy(e->title, t2 + 1, sizeof(e->title) - 1);
                     e->title[sizeof(e->title) - 1] = '\0';
@@ -144,8 +144,7 @@ static void open_page(App* app, int pidx) {
                     app->section_count++;
                 }
             }
-            if(!nl) break;
-            p = nl + 1;
+            line = strtok_r(NULL, "\n", &save);
         }
         free(buf);
     } else {
